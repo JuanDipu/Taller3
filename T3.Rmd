@@ -1,0 +1,233 @@
+---
+title: "Taller 3"
+author: "Jossie Esteban Molina Perdomo, Juan Diego Pulido" 
+date: "2024-05-16"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+# Instalar los paquetes necesarios si no están ya instalados
+
+library(readr)
+library(readr)
+library(zoo)
+variables <- c("age","sex","cp","trestbps","chol","fbs","restecg","thalach","exang","oldpeak","slope","ca","thal","num")
+datos<- read_csv("processed.cleveland.data.txt", 
+    col_names = FALSE)
+datos <- read.csv("processed.cleveland.data.txt", col.names =variables)
+datos[datos == "?"] <- NA
+datos$ca<-as.numeric(datos$ca)
+datos$thal<-as.numeric(datos$thal)
+datos$num <- ifelse(datos$num == 0, 0, 1)
+```
+
+1.  Imputar datos: El conjunto de datos tiene datos perdidos en algunas
+    variables. Estos están notados con un ?. Impute los valores perdidos
+    como la mediana de los datos para las variables correspondientes.
+
+```{r}
+datos[datos == "?"] <- NA
+datos<- na.aggregate(datos, FUN = median)
+
+```
+
+2Revisar las distribuciones bivariadas: Revise la distribución de la
+variable respuesta para cada una de las covariables categoricas de
+manera bivariada. ¿observa algún inconveniente con alguna de las
+variables al hacer el análisis?.
+
+```{r}
+# Cargar la librería ggplot2
+library(ggplot2)
+
+# Lista de variables categóricas
+categoricas <- c("sex", "cp", "fbs", "restecg", "exang", "slope")
+
+# Función para generar gráficos de barras
+generar_grafico <- function(var_categorica) {
+  # Tabla de frecuencia
+  tabla_freq <- table(datos[[var_categorica]], datos$num)
+  
+  # Convertir la tabla de frecuencia en un dataframe
+  df_tabla_freq <- as.data.frame.table(tabla_freq)
+  colnames(df_tabla_freq) <- c(var_categorica, "num", "Frequency")
+  
+  # Crear el gráfico de barras con ggplot2
+  grafico <- ggplot(df_tabla_freq, aes(x = as.factor(get(var_categorica)), y = Frequency, fill = as.factor(num))) +
+    geom_bar(stat = "identity", position = "dodge") +
+    labs(x = var_categorica, y = "Frequency", fill = "Presence of Heart Disease") +
+    ggtitle(paste("Distribution of Heart Disease by", var_categorica)) +
+    theme_minimal()
+  
+  # Imprimir el gráfico
+  print(grafico)
+}
+
+# Generar gráficos para cada variable categórica
+lapply(categoricas, generar_grafico)
+
+```
+
+3.  Modelo bivariado: Calcule manualmente (como lo vimos en clase, a
+    partir de la tabla de contin gencia), los par´ametros estimados de
+    regresión logística considerando únicamente la variable fbs
+    (glucemia en ayunas) y la variable respuesta. Verifique el resultado
+    ajustando el glm correspon diente.
+
+```{r}
+# Tabla de Contingencia para la variable 'fbs'
+tabla_contingencia <- table(datos$fbs, datos$num)
+print("Tabla de Contingencia para la variable 'fbs':")
+print(tabla_contingencia)
+
+```
+
+```{r}
+# Tabla de contingencia para la variable 'fbs' y 'num'
+tabla_contingencia <- table(datos$fbs, datos$num)
+print("Tabla de Contingencia para la variable 'fbs' y 'num':")
+print(tabla_contingencia)
+
+# Calcular las frecuencias marginales
+marginales_fbs <- apply(tabla_contingencia, 1, sum)
+marginales_num <- apply(tabla_contingencia, 2, sum)
+total <- sum(tabla_contingencia)
+
+# Calcular las probabilidades condicionales
+prob_condicional_ataque_con_glucemia <- tabla_contingencia[1, 1] / marginales_fbs[1]
+prob_condicional_no_ataque_con_glucemia <- tabla_contingencia[1, 2] / marginales_fbs[1]
+prob_condicional_ataque_sin_glucemia <- tabla_contingencia[2, 1] / marginales_fbs[2]
+prob_condicional_no_ataque_sin_glucemia <- tabla_contingencia[2, 2] / marginales_fbs[2]
+
+# Calcular las probabilidades marginales
+prob_marginal_ataque <- marginales_num[1] / total
+prob_marginal_no_ataque <- marginales_num[2] / total
+
+# Estimar los parámetros beta
+beta_1 <- log((prob_condicional_ataque_con_glucemia * prob_marginal_no_ataque) / (prob_condicional_ataque_sin_glucemia * prob_marginal_ataque))
+beta_0 <- log(prob_marginal_ataque / (1 - prob_marginal_ataque)) - beta_1 * log(prob_marginal_no_ataque / (1 - prob_marginal_no_ataque))
+
+# Mostrar los resultados
+print("Parámetros estimados de la regresión logística:")
+print(paste("Intercepto (beta_0):", beta_0))
+print(paste("Coeficiente para 'fbs' (beta_1):", beta_1))
+
+
+```
+
+4.  Modelo multivariado: Ajuste un nuevo modelo con todas las variables.
+    ¿cuáles variables son significativas mediante el test de Wald?
+    ¿cuáles no lo son?.
+
+```{r}
+# Ajustar el modelo de regresión logística con todas las variables
+modelo <- glm(num ~ ., data = datos, family = binomial)
+
+# Resumen del modelo
+summary(modelo)
+
+# Pruebas de hipótesis (test de Wald) para determinar la significancia de cada coeficiente
+wald_test <- summary(modelo)$coefficients[, "Pr(>|z|)"]
+
+# Identificar las variables significativas y no significativas
+variables_significativas <- names(wald_test[wald_test < 0.05])
+variables_no_significativas <- names(wald_test[wald_test >= 0.05])
+
+# Mostrar los resultados
+print("Variables significativas mediante el test de Wald:")
+print(variables_significativas)
+print("Variables no significativas mediante el test de Wald:")
+print(variables_no_significativas)
+
+```
+
+5.  Visualizacióon de probabilidades predichas bajo modelo multivariado:
+    Usando el modelo del punto anterior, encuentre las probabilidades de
+    presentar enfermedad cardiaca y visualicelas junto a la variable
+    respuesta. ¿Describe el modelo la presencia de enfermedad cardiaca?.
+
+```{r}
+# Obtener las probabilidades predichas
+probabilidades_predichas <- predict(modelo, type = "response")
+
+# Crear un nuevo dataframe con la variable respuesta y las probabilidades predichas
+datos_predichos <- data.frame(num = datos$num, probabilidades_predichas)
+
+# Gráfico de dispersión de la variable respuesta y las probabilidades predichas
+library(ggplot2)
+ggplot(datos_predichos, aes(x = num, y = probabilidades_predichas)) +
+  geom_point() +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE) +
+  labs(x = "Presencia de enfermedad cardíaca", y = "Probabilidad predicha") +
+  ggtitle("Probabilidades predichas de presentar enfermedad cardíaca") +
+  theme_minimal()
+
+```
+
+Problema 3
+
+```{r}
+library(readxl)
+library(pROC)
+# Leer el archivo de Excel
+datos <- read_excel("AAD-taller03.xlsx")
+
+# Supongamos que las columnas son 'modelo1', 'modelo2' y 'incumplimiento_observado'
+modelo1_pred <- datos$ScoreLogisticoA
+modelo2_pred <- datos$ScoreLogisticoB
+incumplimiento_observado <- datos$Incumplimiento
+
+# Calcular la curva ROC para el modelo 1
+roc1 <- roc(incumplimiento_observado, modelo1_pred)
+
+# Calcular la curva ROC para el modelo 2
+roc2 <- roc(incumplimiento_observado, modelo2_pred)
+
+# Graficar las curvas ROC
+plot(roc1, col="blue", lwd=2, main="Curvas ROC para Modelos 1 y 2")
+lines(roc2, col="red", lwd=2)
+
+# Añadir una línea diagonal
+abline(a=0, b=1, col="grey", lty=2)
+
+# Añadir leyenda
+legend("bottomright", legend=c(paste("Modelo 1 - AUC:", round(auc(roc1), 2)), 
+                               paste("Modelo 2 - AUC:", round(auc(roc2), 2))), 
+       col=c("blue", "red"), lwd=2)
+```
+
+Concusión
+
+La gráfica de la curva ROC junto con los valores de AUC proporciona una
+representación visual clara del rendimiento de los modelos. En este
+caso, la curva ROC del Modelo 2 y su mayor AUC indican que tiene un
+mejor poder predictivo para el incumplimiento de pago de tarjetas de
+crédito.
+
+Problema 4- 10 pts (pr´actico) Este punto es opcional para la nota, pero
+puede mejorar su nota en 10 puntos adicionales. De obtener la nota
+m´axima en el presente taller, los puntos podr´an subir la nota del
+taller 1 o el taller 2
+
+```{r}
+# Instalar y cargar la librería mice si aún no está instalada
+#install.packages("mice")
+library(mice)
+set.seed(123)
+
+# Imputar datos utilizando el algoritmo EM
+datos <- mice(datos, method = "EM", m = 5)
+
+# Completar las imputaciones
+datos <- complete(datos, action = "long", include = TRUE)
+
+```
+
+Inicializar los datos imputados. Iterar hasta convergencia: a. Estimar
+los parámetros del modelo utilizando los datos imputados actuales. b.
+Imputar los valores faltantes utilizando los parámetros estimados. c.
+Evaluar la convergencia comparando los valores imputados con los valores
+imputados anteriores. Terminar cuando la convergencia se alcanza.
